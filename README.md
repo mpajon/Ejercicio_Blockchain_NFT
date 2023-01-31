@@ -367,3 +367,258 @@ Ejecutamos el script:
 ## Paso 4
 
 Nuestro contrato inteligente coge una URL de un token y lo envia como parte de los metadatos del NFT en formato JSON. Para guardar las imagenes y obtener una URL para poder usar en el JSON vamos a usar el protocolo IPFS que es un protocolo descentralizado en una red de persona a persona que permite guardar y compartir información de forma descentralizada.
+
+Nos hacemos una cuenta en [Pinata](https://www.pinata.cloud/) y una vez dentro de ella vamos a subir una imagen. 
+
+Para ello vamos a _Upload_, seleccionamos _File_:
+
+![](./screenshots/pinata01.png)
+
+Seleccionamos la imagen a subir:
+
+![](./screenshots/pinata02.png)
+
+![](./screenshots/pinata03.png)
+
+Una vez subida la foto, la veremos en [Pinata](https://www.pinata.cloud/)
+
+![](./screenshots/pinata04.png)
+
+Si cogemos el CID y lo usamos en la URL _https://gateway.pinata.cloud/ipfs/<CID>_ (cambiando el CID por el que nos da la subida), podemos ver la imagen
+
+Aún no hemos terminado con [Pinata](https://www.pinata.cloud/), vamos a necesitar subir otro fichero, pero tenemos que crearlo primero. 
+Creamos un fichero _nft-metadata.json_ en el raíz del proyecto con el siguiente contenido:
+
+```json
+{
+  "attributes": [
+    {
+      "trait_type": "Autor",
+      "value": "Marcos Pajon"
+    },
+    {
+      "trait_type": "Tipo",
+      "value": "Ejercicio NFT"
+    }
+  ],
+  "description": "Poster de Star Wars",
+  "image": "ipfs://Qmao4ZVgBtkDSSJ3bPUKMDA2wKC5k1VtJ6329Kw4frCkKf",
+  "name": "Star Wars"
+}
+```
+Podemos añadir los atributos (par clave valor) que queramos y cambiar la descripción o el nombre, lo mas importante es el valor del campo _image_ donde denemos poner el CID que obtuvimos antes.
+
+Una vez creado el fichero, lo subimos a [Pinata](https://www.pinata.cloud/) del mismo modo que antes:
+
+![](./screenshots/pinata05.png)
+
+![](./screenshots/pinata06.png)
+
+## Paso 5
+
+Ahora vamos a interactuar con el contrato que hemos desplegado, para ellos necesitamos la dirección del mismo que podemos obtenerla de la información de [Etherscan](https://goerli.etherscan.io/) 
+
+![](./screenshots/etherscan03.png)
+
+Usaremos Web3 para interactuar con nuestro contrato. Para ello añadiremos en el fichero _mint-nft.js_ de la carpeta _scripts_ lo siguiente:
+
+```js
+const contractAddress = "0xff8e174a637abaa5c07b1ea0d8fc6eec68b80605"
+const nftContract = new web3.eth.Contract(contract.abi, contractAddress)
+```
+Siendo _contractAddress_ la dirección del contrato que hemos obtenido en [Etherscan](https://goerli.etherscan.io/).
+
+Ahora mismo _mint-nft.js_ tiene el siguiente contenido:
+
+```js
+require("dotenv").config()
+const API_URL = process.env.API_URL
+const { createAlchemyWeb3 } = require("@alch/alchemy-web3")
+const web3 = createAlchemyWeb3(API_URL)
+const contract = require("../artifacts/contracts/ContratoNFT.sol/ContratoNFT.json")
+console.log(JSON.stringify(contract.abi))
+
+const contractAddress = "0xff8e174a637abaa5c07b1ea0d8fc6eec68b80605"
+const nftContract = new web3.eth.Contract(contract.abi, contractAddress)
+```
+## Paso 6
+
+Para poder crear y enviar transacciones a Ethereum, necesitamos también el valor público de nuestra cuenta. Vamos a añadirla al fichero .env
+
+```properties
+API_URL="https://eth-goerli.g.alchemy.com/v2/your-api-key"
+PRIVATE_KEY="your-metamask-private-key"
+PUBLIC_KEY = "your-public-account-address"
+```
+
+Este parte pública se obtiene de [Metamask](https://metamask.io/)
+
+![](./screenshots/metamask17.png)
+
+## Paso 7
+
+Vamos a crear nuestra transacción. Para ello crearemos una función mintNFT(tokenData) dentro del fichero _mint-nft.js_ de la carpeta _scripts_, añadiendo lo siguiente a dicho fichero:
+
+```js
+    async function mintNFT(tokenURI) {
+     const nonce = await web3.eth.getTransactionCount(PUBLIC_KEY, 'latest'); //get latest nonce
+   //the transaction
+     const tx = {
+       'from': PUBLIC_KEY,
+       'to': contractAddress,
+       'nonce': nonce,
+       'gas': 500000,
+       'data': nftContract.methods.mintNFT(PUBLIC_KEY, tokenURI).encodeABI()
+     };
+   }​
+```
+
+Una vez creada, tendremos que firmar nuestra transacción con nuestra clave privada. Para ello usaremos un método de _web3.eth.sendSignedTransaction_ dentro de la función anterior:
+
+```js
+const signPromise = web3.eth.accounts.signTransaction(tx, PRIVATE_KEY)
+
+  signPromise
+    .then((signedTx) => {
+      web3.eth.sendSignedTransaction(
+        signedTx.rawTransaction,
+        function (err, hash) {
+          if (!err) {
+            console.log(
+              "The hash of your transaction is: ",
+              hash,
+              "\nCheck Alchemy's Mempool to view the status of your transaction!"
+            )
+          } else {
+            console.log(
+              "Something went wrong when submitting your transaction:",
+              err
+            )
+          }
+        }
+      )
+    })
+    .catch((err) => {
+      console.log(" Promise failed:", err)
+    })
+```
+
+## Paso 9
+
+Ahora vamos a llamar a la función que hemos creado. Para ello necesitamos obtener el NFT metadata hashcode de [Pinata](https://www.pinata.cloud/). Del JSON (NO de la imagen):
+
+![](./screenshots/pinata07.png)
+
+Este valor será el parámetro de la función _mintNFT_ que hemos creado.
+
+Invocamos a la función al final del fichero:
+
+```js
+mintNFT("ipfs://QmfAvpgcxhbQqJejDrjkgXxNdidHw4LowXdwNrkLW5ejJv")
+```
+
+De este modo, el fichero _mint-nft.js_ de la carpeta _scripts_ queda de la siguiente manera:
+
+```js
+require("dotenv").config()
+const API_URL = process.env.API_URL
+const PUBLIC_KEY = process.env.PUBLIC_KEY
+const PRIVATE_KEY = process.env.PRIVATE_KEY
+
+const contractAddress = "0xff8e174a637abaa5c07b1ea0d8fc6eec68b80605"
+const nftContract = new web3.eth.Contract(contract.abi, contractAddress)
+
+async function mintNFT(tokenURI) {
+     const nonce = await web3.eth.getTransactionCount(PUBLIC_KEY, 'latest'); //get latest nonce
+   //the transaction
+     const tx = {
+       'from': PUBLIC_KEY,
+       'to': contractAddress,
+       'nonce': nonce,
+       'gas': 500000,
+       'data': nftContract.methods.mintNFT(PUBLIC_KEY, tokenURI).encodeABI()
+     };
+  const signPromise = web3.eth.accounts.signTransaction(tx, PRIVATE_KEY)
+
+  signPromise
+    .then((signedTx) => {
+      web3.eth.sendSignedTransaction(
+        signedTx.rawTransaction,
+        function (err, hash) {
+          if (!err) {
+            console.log(
+              "The hash of your transaction is: ",
+              hash,
+              "\nCheck Alchemy's Mempool to view the status of your transaction!"
+            )
+          } else {
+            console.log(
+              "Something went wrong when submitting your transaction:",
+              err
+            )
+          }
+        }
+      )
+    })
+    .catch((err) => {
+      console.log(" Promise failed:", err)
+    })
+}
+mintNFT("ipfs://QmfAvpgcxhbQqJejDrjkgXxNdidHw4LowXdwNrkLW5ejJv")
+```
+Para poder usar correctamente los valores del fichero _.env_ necesitamos declararlos al principio del fichero _mint-nft.js_
+
+```js
+const API_URL = process.env.API_URL
+const PUBLIC_KEY = process.env.PUBLIC_KEY
+const PRIVATE_KEY = process.env.PRIVATE_KEY
+```
+
+Ejecutamos el script:
+
+    $ node scripts/mint-nft.js
+
+Despues de un tiempo, si todo ha ido bien, veremos una salida similar a esta:
+
+    $ The hash of your transaction is:  0x69fd01694273228e6a8b57121869c59c87983bbbcd9f0c7c06b1964d785d41d1
+    Check Alchemy's Mempool to view the status of your transaction!
+
+Podemos comprobar en [Etherscan](https://goerli.etherscan.io/) esta transacción para ver su estado
+
+![](./screenshots/etherscan04.png)
+
+Ahora podemos minar cualquier NFT que queramos (siempre que tengamos saldo). Bastaría con subir a [Pinata](https://www.pinata.cloud/) la imagen y el JSON asociado. El CID del JSON lo usamos como parámetro de la función _mintNFT_.
+
+Importar NFT a nuestra cartera
+
+## Paso 1
+
+Vamos a la web [pixxiti](https://pixxiti.com/ethereum/goerli) y nos conectamos con la cuenta que hemos usado para generar el NFT.
+
+Pulsamos en _Connect_:
+
+![](./screenshots/pixxiti01.png)
+
+Seleccionamos _Metamask_:
+
+![](./screenshots/pixxiti02.png)
+
+Elegimos la cuenta:
+
+![](./screenshots/pixxiti03.png)
+
+Nos conectamos:
+
+![](./screenshots/pixxiti04.png)
+
+Si todo ha ido bien, aparecemos como conectados en [pixxiti](https://pixxiti.com/ethereum/goerli) y pinchando en _View your NFTs_:
+
+![](./screenshots/pixxiti05.png)
+
+Veremos el NFT asociado a nuestra cuenta:
+
+![](./screenshots/pixxiti06.png)
+
+Y al seleccionarlo vemos los atributos del NFT:
+
+![](./screenshots/pixxiti07.png)
